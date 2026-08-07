@@ -23,9 +23,8 @@ class MidiWorker(QObject):
     def start_logic(self):
         """The main loop - this runs in the background thread."""
         try:
+            # Init RtMidi
             self.midiin = rtmidi.RtMidiIn()
-
-            # Check for available ports
             ports = range(self.midiin.getPortCount())
             if ports:
                 for i in ports:
@@ -38,9 +37,9 @@ class MidiWorker(QObject):
             print(f"\nListening for MIDI input on: {port_index}")
             print("Press Ctrl+C to stop.\n")
 
+            # Init fluidsynth
             fluidsynth = self._load_fluidsynth()
 
-            # --- INITIALIZE SYNTH ---
             self.fs = fluidsynth.Synth()
             self.fs.setting('midi.driver', 'none')
             self.fs.setting('audio.period-size', 128)
@@ -97,9 +96,6 @@ class MidiWorker(QObject):
                 # Add  bin folder to the front of the PATH just for this session. This is required for fluidsynth import resolution
                 os.environ['PATH'] = fluidsynth_bin_path + os.path.pathsep + os.environ['PATH']
 
-                # C. Verify the DLL name
-                # Some pyfluidsynth versions look for 'libfluidsynth-3', some for 'fluidsynth'
-                # If your file is named libfluidsynth-3.dll, we can help pyfluidsynth find it:
                 try:
                     ctypes.CDLL(os.path.join(fluidsynth_bin_path, 'libfluidsynth-3.dll'))
                     print("Verified: libfluidsynth-3.dll is loadable.")
@@ -115,8 +111,5 @@ class MidiWorker(QObject):
         except ImportError as e:
             print("\n--- IMPORT ERROR ---")
             print(e)
-            print("\nTroubleshooting hint: Check if your 'bin/fluidsynth' folder")
-            print("contains 'libfluidsynth-3.dll'. If it's named 'libfluidsynth.dll',")
-            print("rename it or create a copy named 'libfluidsynth-3.dll'.")
             sys.exit(1)
         return fluidsynth
