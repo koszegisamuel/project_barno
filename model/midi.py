@@ -24,33 +24,10 @@ class MidiWorker(QObject):
         """The main loop - this runs in the background thread."""
         try:
             # Init RtMidi
-            self.midiin = rtmidi.RtMidiIn()
-            ports = range(self.midiin.getPortCount())
-            if ports:
-                for i in ports:
-                    print(f"\nAvailable port: {self.midiin.getPortName(i)}")
-            else:
-                print('NO MIDI INPUT PORTS!')
-
-            port_index = 0
-            self.midiin.openPort(port_index)
-            print(f"\nListening for MIDI input on: {port_index}")
-            print("Press Ctrl+C to stop.\n")
+            self._init_midi_input()
 
             # Init fluidsynth
-            fluidsynth = self._load_fluidsynth()
-
-            self.fs = fluidsynth.Synth()
-            self.fs.setting('midi.driver', 'none')
-            self.fs.setting('audio.period-size', 128)
-            self.fs.setting('audio.periods', 2)
-            self.fs.setting('synth.sample-rate', 44100.0)
-            self.fs.start(driver='wasapi')
-
-            # Update this path to your portable soundfont location
-            sf_path = os.path.join(self._current_dir, 'soundfonts', 'FluidR3_GM.sf2')
-            sf_id = self.fs.sfload(sf_path)
-            self.fs.program_select(0, sf_id, 0, 0)
+            self._init_fluid_synth()
 
             while self._running:
                 midi = self.midiin.getMessage()
@@ -76,6 +53,35 @@ class MidiWorker(QObject):
         finally:
             self.cleanup()
 
+    def _init_fluid_synth(self):
+        fluidsynth = self._load_fluid_synth()
+
+        self.fs = fluidsynth.Synth()
+        self.fs.setting('midi.driver', 'none')
+        self.fs.setting('audio.period-size', 128)
+        self.fs.setting('audio.periods', 2)
+        self.fs.setting('synth.sample-rate', 44100.0)
+        self.fs.start(driver='wasapi')
+
+        # Update this path to your portable soundfont location
+        sf_path = os.path.join(self._current_dir, 'soundfonts', 'FluidR3_GM.sf2')
+        sf_id = self.fs.sfload(sf_path)
+        self.fs.program_select(0, sf_id, 0, 0)
+
+    def _init_midi_input(self):
+        self.midiin = rtmidi.RtMidiIn()
+        ports = range(self.midiin.getPortCount())
+        if ports:
+            for i in ports:
+                print(f"\nAvailable port: {self.midiin.getPortName(i)}")
+        else:
+            print('NO MIDI INPUT PORTS!')
+
+        port_index = 0
+        self.midiin.openPort(port_index)
+        print(f"\nListening for MIDI input on: {port_index}")
+        print("Press Ctrl+C to stop.\n")
+
     def stop(self):
         self._running = False
 
@@ -86,7 +92,7 @@ class MidiWorker(QObject):
             self.fs.delete()
         print("MIDI Engine Cleaned Up.")
 
-    def _load_fluidsynth(self):
+    def _load_fluid_synth(self):
         fluidsynth_bin_path = os.path.join(self._current_dir, 'bin', 'fluidsynth')
 
         if sys.platform == 'win32':
