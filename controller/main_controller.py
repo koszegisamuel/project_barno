@@ -1,6 +1,6 @@
 from PySide6.QtCore import QThread, QObject
 
-from project_barno.model.midi import MidiWorker
+from model.midi import MidiWorker
 
 
 class MainController(QObject):
