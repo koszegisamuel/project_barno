@@ -17,7 +17,7 @@ class MidiWorker(QObject):
         self._running = True
         self.midiin = None
         self.fs = None
-        self._current_dir = Path(__file__).resolve().parent.parent
+        self._current_dir = Path(__file__).resolve().parents[2]
 
     @Slot()
     def start_logic(self):

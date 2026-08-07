@@ -1,6 +1,6 @@
 from PySide6.QtCore import QThread, QObject
 
-from model.midi import MidiWorker
+from src.model.midi import MidiWorker
 
 
 class MainController(QObject):
