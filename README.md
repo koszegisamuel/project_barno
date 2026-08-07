@@ -9,9 +9,9 @@ to pin down some core functionalities the tools should have in order to provide 
 
 ## Basic features
 
-[ 0 ] Recognise MIDI input real time
+[ X ] Recognise MIDI input real time
 
-[ 0 ] Has Piano sound kit for real time playing
+[ X ] Has Piano sound kit for real time playing
 
 [ 0 ] Is able to import simple MIDI files
 
@@ -19,7 +19,7 @@ to pin down some core functionalities the tools should have in order to provide 
 
 [ 0 ] Has basic tempo and volume control
 
-[ 0 ] Has a general graphical user interface to visualize the piano and notes
+[ X/O ] Has a general graphical user interface to visualize the piano and notes
 
 ## Additional features
 [ 0 ] Rewind and forward jump in the player

@@ -11,6 +11,8 @@ class MidiWorker(QObject):
     # Signals must be defined as class attributes
     note_detected = Signal(str)
     error_occurred = Signal(str)
+    note_on = Signal(int)
+    note_off = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -38,10 +40,12 @@ class MidiWorker(QObject):
                     if midi.isNoteOn():
                         self.fs.noteon(0, note_num, velocity)
                         self.note_detected.emit(f'Note: {midi.getMidiNoteName(note_num)}, Velocity: {velocity}')
+                        self.note_on.emit(note_num)
                         print(f'Note: {midi.getMidiNoteName(note_num)}, Velocity: {velocity}')
 
                     elif midi.isNoteOff():
                         self.fs.noteoff(0, note_num)
+                        self.note_off.emit(note_num)
 
                     elif midi.isController() and midi.getControllerNumber() == 64:
                         self.fs.cc(0, 64, midi.getControllerValue())

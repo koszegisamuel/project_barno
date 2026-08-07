@@ -29,6 +29,8 @@ class MainController(QObject):
         self.midi_thread.started.connect(self.worker.start_logic)
         self.worker.note_detected.connect(self.view.update_note_display)
         self.worker.error_occurred.connect(self.view.show_error)
+        self.worker.note_on.connect(self.view.piano_widget.handle_note_on)
+        self.worker.note_off.connect(self.view.piano_widget.handle_note_off)
 
         # Set high priority for MIDI timing
         self.midi_thread.start(QThread.Priority.TimeCriticalPriority)
