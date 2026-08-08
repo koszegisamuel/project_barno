@@ -7,6 +7,10 @@ import os
 import sys
 import ctypes
 
+from src.controller.configuration_controller import Configuration
+from src.util.instrument_registry import InstrumentRegistry
+
+
 class MidiWorker(QObject):
     # Signals must be defined as class attributes
     note_detected = Signal(str)
@@ -20,6 +24,7 @@ class MidiWorker(QObject):
         self.midiin = None
         self.fs = None
         self._current_dir = Path(__file__).resolve().parents[2]
+        self._config = Configuration.current()
 
     @Slot()
     def start_logic(self):
@@ -65,12 +70,13 @@ class MidiWorker(QObject):
         self.fs.setting('audio.period-size', 128)
         self.fs.setting('audio.periods', 2)
         self.fs.setting('synth.sample-rate', 44100.0)
-        self.fs.start(driver='wasapi')
+        self.fs.start(driver=self._config.audio_driver)
 
         # Update this path to your portable soundfont location
         sf_path = os.path.join(self._current_dir, 'soundfonts', 'FluidR3_GM.sf2')
         sf_id = self.fs.sfload(sf_path)
-        self.fs.program_select(0, sf_id, 0, 0)
+        configured_instrument = self._config.instrument
+        self.fs.program_select(0, sf_id, 0, InstrumentRegistry.get_instrument_id(configured_instrument))
 
     def _init_midi_input(self):
         self.midiin = rtmidi.RtMidiIn()

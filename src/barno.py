@@ -14,6 +14,8 @@ def main():
     # Initialize View
     view = MainWindow(controller)
 
+    #Currently configuration is loaded with horizontal settings
+
     # Connect Controller to View
     controller.set_view(view)
 

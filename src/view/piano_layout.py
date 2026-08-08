@@ -9,6 +9,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Slot
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QWidget
 
+from src.controller.configuration_controller import Configuration
 from src.util.constants import PIANO_SOURCE_LIVE, PIANO_SOURCE_PLAYBACK
 
 
@@ -36,12 +37,9 @@ class PianoKey(QFrame):
         )
 
     def press(self, source: str):
-
-        if source == PIANO_SOURCE_LIVE:
-            self.set_style(self.highlight_color_live)
-        elif source == PIANO_SOURCE_PLAYBACK:
+        if source == PIANO_SOURCE_PLAYBACK and Configuration.current().show_playback_notes:
             self.set_style(self.highlight_color_playback)
-        else:
+        elif source == PIANO_SOURCE_LIVE:
             self.set_style(self.highlight_color_live)
     def release(self):
         self.set_style(self.default_color)

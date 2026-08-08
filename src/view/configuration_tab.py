@@ -18,6 +18,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.controller.configuration_controller import ConfigurationController
+from src.util.instrument_registry import InstrumentRegistry
+
 
 class ToggleButton(QAbstractButton):
     """Painted switch control that renders consistently across platforms."""
@@ -85,24 +88,9 @@ class ConfigurationDialog(QDialog):
 
     save_requested = Signal()
 
-    MIDI_INPUT_OPTIONS = (
-        "Default MIDI Input",
-        "USB MIDI Keyboard",
-        "Digital Piano",
-        "Virtual MIDI Port",
-    )
     AUDIO_DRIVER_OPTIONS = (
-        "System Default",
-        "WASAPI",
-        "DirectSound",
-        "ALSA",
-        "CoreAudio",
-    )
-    INSTRUMENT_OPTIONS = (
-        "Acoustic Grand Piano",
-        "Bright Acoustic Piano",
-        "Electric Piano",
-        "Honky-tonk Piano",
+        "wasapi",
+        "dsound",
     )
 
     def __init__(self, parent=None):
@@ -138,11 +126,11 @@ class ConfigurationDialog(QDialog):
         form.setVerticalSpacing(16)
         form.setColumnStretch(1, 1)
 
-        self.midi_input_combo = self._make_combo(self.MIDI_INPUT_OPTIONS)
+        self.midi_input_combo = self._make_combo(ConfigurationController.get_connected_midi_devices())
         self.audio_driver_combo = self._make_combo(
             self.AUDIO_DRIVER_OPTIONS
         )
-        self.instrument_combo = self._make_combo(self.INSTRUMENT_OPTIONS)
+        self.instrument_combo = self._make_combo(InstrumentRegistry.get_instrument_names())
         self.show_playback_notes_toggle = ToggleSwitch(True)
 
         self._add_field(

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import ClassVar, Mapping
 
 from PySide6.QtCore import QObject, Signal
+import rtmidi
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +97,17 @@ class ConfigurationController(QObject):
         """Return ``<project root>/conf.json`` for src/controller placement."""
 
         return Path(__file__).resolve().parents[2] / "conf.json"
+
+    @staticmethod
+    def get_connected_midi_devices() -> list[str]:
+        """Return list of connected MIDI devices."""
+        devices = []
+        midiin = rtmidi.RtMidiIn()
+        ports = range(midiin.getPortCount())
+        if ports:
+            for i in ports:
+                devices.append(midiin.getPortName(i))
+        return devices
 
     def load_configuration(self) -> Configuration:
         """Load, validate, install, and return the typed configuration.
