@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.util.constants import PIANO_SOURCE_PLAYBACK
+from src.view.horizontal_settings import HorizontalSettingsWidget
 from src.view.piano_layout import PianoLayoutWidget
 
 
@@ -44,6 +45,11 @@ class MainWindow(QMainWindow):
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(12, 12, 12, 12)
         self.main_layout.setSpacing(10)
+
+        # Extensible application toolbar. Its configuration dialog/controller
+        # live in separate modules so this window stays focused on playback UI.
+        self.horizontal_settings = HorizontalSettingsWidget(self)
+        self.main_layout.addWidget(self.horizontal_settings)
 
         # Existing live MIDI engine control plus MIDI-file importing.
         top_controls = QHBoxLayout()
