@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.util.constants import PIANO_SOURCE_PLAYBACk
+from src.util.constants import PIANO_SOURCE_PLAYBACK
 from src.view.piano_layout import PianoLayoutWidget
 
 
@@ -37,7 +37,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_controller()
         self._install_shortcuts()
-        self._load_default_midi_if_present()
+        #self._load_default_midi_if_present()
 
     def _build_ui(self):
         self.central_widget = QWidget()
@@ -235,15 +235,15 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def on_playback_note_on(self, note):
-        self.piano_widget.handle_note_on(note, source=PIANO_SOURCE_PLAYBACk)
+        self.piano_widget.handle_note_on(note, source=PIANO_SOURCE_PLAYBACK)
 
     @Slot(int)
     def on_playback_note_off(self, note):
-        self.piano_widget.handle_note_off(note, source=PIANO_SOURCE_PLAYBACk)
+        self.piano_widget.handle_note_off(note, source=PIANO_SOURCE_PLAYBACK)
 
     @Slot()
     def reset_playback_highlights(self):
-        self.piano_widget.release_source(PIANO_SOURCE_PLAYBACk)
+        self.piano_widget.release_source(PIANO_SOURCE_PLAYBACK)
 
     @Slot(int)
     def change_speed(self, percentage):
