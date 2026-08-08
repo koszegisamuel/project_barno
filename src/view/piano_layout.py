@@ -9,6 +9,8 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Slot
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QWidget
 
+from src.util.constants import PIANO_SOURCE_LIVE, PIANO_SOURCE_PLAYBACk
+
 
 class PianoKey(QFrame):
     def __init__(self, midi_note, is_black, parent=None):
@@ -16,7 +18,8 @@ class PianoKey(QFrame):
         self.midi_note = midi_note
         self.is_black = is_black
         self.default_color = "#333" if is_black else "white"
-        self.highlight_color = "#2ecc71"
+        self.highlight_color_live = "#2ecc71"
+        self.highlight_color_playback = "#4da8da"
 
         self.set_style(self.default_color)
 
@@ -32,9 +35,14 @@ class PianoKey(QFrame):
             "border-radius: 2px;"
         )
 
-    def press(self):
-        self.set_style(self.highlight_color)
+    def press(self, source: str):
 
+        if source == PIANO_SOURCE_LIVE:
+            self.set_style(self.highlight_color_live)
+        elif source == PIANO_SOURCE_PLAYBACk:
+            self.set_style(self.highlight_color_playback)
+        else:
+            self.set_style(self.highlight_color_live)
     def release(self):
         self.set_style(self.default_color)
 
@@ -202,17 +210,17 @@ class PianoLayoutWidget(QWidget):
         self.note_overlay.raise_()
 
     @Slot(int)
-    def handle_note_on(self, note, source="live"):
+    def handle_note_on(self, note, source=PIANO_SOURCE_LIVE):
         """Highlight a key while retaining independent source reference counts."""
 
         if note not in self.keys:
             return
         counts = self._active_sources[note]
         counts[source] = counts.get(source, 0) + 1
-        self.keys[note].press()
+        self.keys[note].press(source)
 
     @Slot(int)
-    def handle_note_off(self, note, source="live"):
+    def handle_note_off(self, note, source=PIANO_SOURCE_LIVE):
         if note not in self.keys:
             return
         counts = self._active_sources[note]
@@ -222,7 +230,7 @@ class PianoLayoutWidget(QWidget):
             else:
                 counts[source] -= 1
         if counts:
-            self.keys[note].press()
+            self.keys[note].press(source)
         else:
             self._active_sources.pop(note, None)
             self.keys[note].release()
@@ -234,7 +242,7 @@ class PianoLayoutWidget(QWidget):
             counts = self._active_sources[note]
             counts.pop(source, None)
             if counts:
-                self.keys[note].press()
+                self.keys[note].press(source)
             else:
                 self._active_sources.pop(note, None)
                 self.keys[note].release()

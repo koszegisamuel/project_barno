@@ -1,0 +1,2 @@
+PIANO_SOURCE_LIVE = "live"
+PIANO_SOURCE_PLAYBACk = "playback"

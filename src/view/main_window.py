@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.util.constants import PIANO_SOURCE_PLAYBACk
 from src.view.piano_layout import PianoLayoutWidget
 
 
@@ -201,7 +202,7 @@ class MainWindow(QMainWindow):
         self.file_label.setText(
             f"{timeline.path.name} & {len(timeline.note_spans)} notes"
         )
-        self.setWindowTitle(f"Barno & {timeline.path.name}")
+        self.setWindowTitle(f"Barno: currently playing {timeline.path.name}")
         self.piano_widget.set_playback_timeline(timeline.note_spans)
         self.seek_slider.setEnabled(timeline.duration_seconds > 0)
         for button in (
@@ -234,15 +235,15 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def on_playback_note_on(self, note):
-        self.piano_widget.handle_note_on(note, source="playback")
+        self.piano_widget.handle_note_on(note, source=PIANO_SOURCE_PLAYBACk)
 
     @Slot(int)
     def on_playback_note_off(self, note):
-        self.piano_widget.handle_note_off(note, source="playback")
+        self.piano_widget.handle_note_off(note, source=PIANO_SOURCE_PLAYBACk)
 
     @Slot()
     def reset_playback_highlights(self):
-        self.piano_widget.release_source("playback")
+        self.piano_widget.release_source(PIANO_SOURCE_PLAYBACk)
 
     @Slot(int)
     def change_speed(self, percentage):
