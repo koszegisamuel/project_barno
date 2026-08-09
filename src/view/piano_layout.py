@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QFrame, QWidget
 
 from src.controller.configuration_controller import Configuration
 from src.util.constants import PIANO_SOURCE_LIVE, PIANO_SOURCE_PLAYBACK
+from src.view.note_feedback import NoteFeedbackOverlay
 
 
 class PianoKey(QFrame):
@@ -37,10 +38,14 @@ class PianoKey(QFrame):
         )
 
     def press(self, source: str):
-        if source == PIANO_SOURCE_PLAYBACK and Configuration.current().show_playback_notes:
-            self.set_style(self.highlight_color_playback)
+        if source == PIANO_SOURCE_PLAYBACK:
+            if Configuration.current().show_playback_notes:
+                self.set_style(self.highlight_color_playback)
+            else:
+                self.set_style(self.default_color)
         elif source == PIANO_SOURCE_LIVE:
             self.set_style(self.highlight_color_live)
+
     def release(self):
         self.set_style(self.default_color)
 
@@ -207,18 +212,41 @@ class PianoLayoutWidget(QWidget):
         self.note_overlay.setGeometry(0, 0, current_x, 280)
         self.note_overlay.raise_()
 
+        # One transparent surface handles every real-time note animation. It is
+        # intentionally separate from the falling-note renderer so effects can
+        # stop their timer completely while idle.
+        self.feedback_overlay = NoteFeedbackOverlay(
+            key_geometry=key_geometry,
+            strike_y=280.0,
+            parent=self,
+        )
+        self.feedback_overlay.setGeometry(0, 0, current_x, 400)
+        self.feedback_overlay.raise_()
+
     @Slot(int)
-    def handle_note_on(self, note, source=PIANO_SOURCE_LIVE):
+    def handle_note_on(
+        self,
+        note,
+        source=PIANO_SOURCE_LIVE,
+        animate=True,
+    ):
         """Highlight a key while retaining independent source reference counts."""
 
         if note not in self.keys:
             return
         counts = self._active_sources[note]
         counts[source] = counts.get(source, 0) + 1
-        self.keys[note].press(source)
+        self._refresh_key(note)
+        if source == PIANO_SOURCE_LIVE and animate:
+            self.feedback_overlay.begin_note(note, "live")
 
     @Slot(int)
-    def handle_note_off(self, note, source=PIANO_SOURCE_LIVE):
+    def handle_note_off(
+        self,
+        note,
+        source=PIANO_SOURCE_LIVE,
+        animate=True,
+    ):
         if note not in self.keys:
             return
         counts = self._active_sources[note]
@@ -227,10 +255,21 @@ class PianoLayoutWidget(QWidget):
                 counts.pop(source)
             else:
                 counts[source] -= 1
-        if counts:
-            self.keys[note].press(source)
-        else:
+        if not counts:
             self._active_sources.pop(note, None)
+        self._refresh_key(note)
+        if source == PIANO_SOURCE_LIVE and animate:
+            self.feedback_overlay.end_note(note, "live")
+
+    def _refresh_key(self, note: int) -> None:
+        """Render the highest-priority source still holding this key."""
+
+        counts = self._active_sources.get(note, {})
+        if counts.get(PIANO_SOURCE_LIVE, 0) > 0:
+            self.keys[note].press(PIANO_SOURCE_LIVE)
+        elif counts.get(PIANO_SOURCE_PLAYBACK, 0) > 0:
+            self.keys[note].press(PIANO_SOURCE_PLAYBACK)
+        else:
             self.keys[note].release()
 
     def release_source(self, source: str) -> None:
@@ -239,11 +278,30 @@ class PianoLayoutWidget(QWidget):
         for note in tuple(self._active_sources):
             counts = self._active_sources[note]
             counts.pop(source, None)
-            if counts:
-                self.keys[note].press(source)
-            else:
+            if not counts:
                 self._active_sources.pop(note, None)
-                self.keys[note].release()
+            self._refresh_key(note)
+
+    def begin_live_feedback(self, note: int) -> None:
+        self.feedback_overlay.begin_note(note, "live")
+
+    def apply_onset_feedback(self, feedback) -> None:
+        """Apply a PerformanceTracker onset judgment to the active effect."""
+
+        self.feedback_overlay.update_note_grade(
+            feedback.note,
+            feedback.grade,
+            feedback.label,
+        )
+
+    def finish_live_feedback(self, feedback) -> None:
+        """End the hold beam using the duration judgment's color and label."""
+
+        self.feedback_overlay.end_note(
+            feedback.note,
+            feedback.grade,
+            feedback.label,
+        )
 
     def set_playback_timeline(self, note_spans: Iterable) -> None:
         self.note_overlay.set_note_spans(note_spans)

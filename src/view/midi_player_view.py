@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from src.util.constants import PIANO_SOURCE_PLAYBACK
 from src.view.piano_layout import PianoLayoutWidget
-
+from src.view.performance_result_dialog import PerformanceResultDialog
 
 class MidiPlayerView(QFrame):
     """Complete player UI and the existing controller-facing view contract."""
@@ -63,6 +63,22 @@ class MidiPlayerView(QFrame):
         self.load_button.clicked.connect(self.controller.start_midi_engine)
         self.import_button = QPushButton("Import MIDI")
         self.import_button.clicked.connect(self.choose_midi_file)
+        # Keep the metronome in the always-visible header. The transport row can
+        # become crowded in the responsive split-pane layout at smaller widths.
+        self.metronome_button = QPushButton("Metronome: Off")
+        self.metronome_button.setObjectName("metronomeButton")
+        self.metronome_button.setCheckable(True)
+        self.metronome_button.setToolTip(
+            "Play tempo-map-aware clicks during MIDI playback"
+        )
+
+        self.enable_playback_button = QPushButton("Enable Playback")
+        self.enable_playback_button.setObjectName("enablePlaybackButton")
+        self.enable_playback_button.setCheckable(True)
+        self.enable_playback_button.setToolTip(
+            "Control if you want to hear the playback"
+        )
+
         self.file_label = QLabel("No MIDI file loaded")
         self.file_label.setObjectName("fileLabel")
         self.file_label.setMinimumWidth(100)
@@ -71,6 +87,8 @@ class MidiPlayerView(QFrame):
         header.addSpacing(8)
         header.addWidget(self.load_button)
         header.addWidget(self.import_button)
+        header.addWidget(self.metronome_button)
+        header.addWidget(self.enable_playback_button)
         header.addWidget(self.file_label, 1)
         root.addLayout(header)
 
@@ -156,6 +174,12 @@ class MidiPlayerView(QFrame):
         )
         self.back_button.clicked.connect(lambda: self.jump_by(-5.0))
         self.forward_button.clicked.connect(lambda: self.jump_by(5.0))
+        self.metronome_button.toggled.connect(
+            self.controller.set_metronome_enabled
+        )
+        self.enable_playback_button.toggled.connect(
+            self.controller.set_playback_enabled
+        )
         self.speed_slider.valueChanged.connect(self.change_speed)
         self.seek_slider.sliderPressed.connect(self.begin_slider_seek)
         self.seek_slider.sliderMoved.connect(self.preview_slider_seek)
@@ -163,6 +187,9 @@ class MidiPlayerView(QFrame):
 
         self.setStyleSheet(
             """
+            QLabel {
+                color: #E7EAF0;
+            }
             QFrame#midiPlayerView {
                 color: #E7EAF0;
                 background-color: #141922;
@@ -205,6 +232,18 @@ class MidiPlayerView(QFrame):
                 border-color: #57C7FF;
                 font-weight: 700;
             }
+            QFrame#midiPlayerView QPushButton#metronomeButton:checked {
+                color: #0C1820;
+                background-color: #67E8A5;
+                border-color: #67E8A5;
+                font-weight: 700;
+            }
+            QFrame#midiPlayerView QPushButton#enablePlaybackButton:checked {
+                color: #0C1820;
+                background-color: #67E8A5;
+                border-color: #67E8A5;
+                font-weight: 700;
+            }
             QFrame#midiPlayerView QSlider::groove:horizontal {
                 height: 5px;
                 background: #343A4C;
@@ -238,6 +277,16 @@ class MidiPlayerView(QFrame):
             self.reset_playback_highlights
         )
         self.controller.playback_error.connect(self.show_error)
+        self.controller.performance_report_ready.connect(
+            self.show_performance_report
+        )
+        self.controller.metronome_enabled_changed.connect(
+            self.on_metronome_enabled_changed
+        )
+
+        self.controller.playback_enabled_changed.connect(
+            self.on_playback_enabled_changed
+        )
 
     def _install_shortcuts(self) -> None:
         open_action = QAction("Import MIDI", self)
@@ -299,6 +348,25 @@ class MidiPlayerView(QFrame):
     @Slot(bool)
     def on_playback_changed(self, playing) -> None:
         self.play_button.setText("Pause" if playing else "Play")
+
+    @Slot(bool)
+    def on_metronome_enabled_changed(self, enabled: bool) -> None:
+        """Keep button text/state correct for UI or controller toggles."""
+
+        self.metronome_button.blockSignals(True)
+        self.metronome_button.setChecked(enabled)
+        self.metronome_button.setText(
+            "Metronome: On " if enabled else "Metronome: Off"
+        )
+        self.metronome_button.blockSignals(False)
+
+    @Slot(bool)
+    def on_playback_enabled_changed(self, enabled: bool) -> None:
+        """Keep button text/state correct for UI or controller toggles."""
+
+        self.enable_playback_button.blockSignals(True)
+        self.enable_playback_button.setChecked(enabled)
+        self.enable_playback_button.blockSignals(False)
 
     @Slot(float)
     def on_position_changed(self, seconds) -> None:
@@ -401,3 +469,11 @@ class MidiPlayerView(QFrame):
         self.status_label.setText(error_text)
         self.log_message.emit(error_text, "ERROR")
         QMessageBox.critical(self, "Error", error_text)
+
+    @Slot(object)
+    def show_performance_report(self, report) -> None:
+        PerformanceResultDialog.show_report(
+            report=report,
+            parent=self.window(),
+            practice_again_callback=self.controller.toggle_file_playback,
+        )

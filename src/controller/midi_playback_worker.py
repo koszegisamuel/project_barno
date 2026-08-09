@@ -17,9 +17,11 @@ from pathlib import Path
 import mido
 from PySide6.QtCore import QObject, QThread, Signal
 
-
-
-
+from src.controller.metronome import (
+    MetronomeDispatch,
+    MetronomeSchedule,
+    MetronomeTick,
+)
 @dataclass(frozen=True, slots=True)
 class ScheduledMidiEvent:
     """A MIDI channel message at an absolute position in song seconds."""
@@ -56,6 +58,7 @@ class MidiTimeline:
     duration_seconds: float
     events: tuple[ScheduledMidiEvent, ...]
     note_spans: tuple[NoteSpan, ...]
+    metronome_ticks: tuple[MetronomeTick, ...] = ()
 
     @classmethod
     def from_file(cls, path: str | Path) -> "MidiTimeline":
@@ -63,6 +66,7 @@ class MidiTimeline:
 
         midi_path = Path(path).expanduser().resolve()
         midi = mido.MidiFile(midi_path)
+        metronome_schedule = MetronomeSchedule.from_midi(midi)
         merged_track = mido.merge_tracks(midi.tracks)
 
         tempo = 500_000  # MIDI default: 120 BPM in microseconds per beat.
@@ -130,6 +134,7 @@ class MidiTimeline:
             duration_seconds=max(0.0, song_seconds),
             events=tuple(events),
             note_spans=tuple(spans),
+            metronome_ticks=metronome_schedule.ticks,
         )
 
     def held_notes_at(self, seconds: float) -> tuple[NoteSpan, ...]:
@@ -174,6 +179,7 @@ class MidiPlaybackWorker(QThread):
 
     position_changed = Signal(float)
     midi_event_due = Signal(object)  # MidiDispatch
+    metronome_tick_due = Signal(object)  # MetronomeDispatch
     chase_requested = Signal(object, object)  # state messages, held notes
     panic_requested = Signal()
     playback_changed = Signal(bool)
@@ -184,7 +190,10 @@ class MidiPlaybackWorker(QThread):
         self._condition = threading.Condition()
         self._timeline: MidiTimeline | None = None
         self._event_times: tuple[float, ...] = ()
+        self._metronome_times: tuple[float, ...] = ()
         self._next_event_index = 0
+        self._next_metronome_index = 0
+        self._metronome_enabled = False
         self._position = 0.0
         self._anchor_position = 0.0
         self._anchor_clock = time.perf_counter()
@@ -213,6 +222,12 @@ class MidiPlaybackWorker(QThread):
         with self._condition:
             return generation == self._generation
 
+    def metronome_is_enabled(self) -> bool:
+        """Thread-safe state check used to discard a just-disabled click."""
+
+        with self._condition:
+            return self._metronome_enabled
+
     def set_timeline(self, timeline: MidiTimeline) -> None:
         with self._condition:
             self._generation += 1
@@ -220,7 +235,11 @@ class MidiPlaybackWorker(QThread):
             self._event_times = tuple(
                 event.at_seconds for event in timeline.events
             )
+            self._metronome_times = tuple(
+                tick.at_seconds for tick in timeline.metronome_ticks
+            )
             self._next_event_index = 0
+            self._next_metronome_index = 0
             self._position = 0.0
             self._anchor_position = 0.0
             self._anchor_clock = time.perf_counter()
@@ -237,6 +256,7 @@ class MidiPlaybackWorker(QThread):
             if self._position >= self._timeline.duration_seconds:
                 self._position = 0.0
                 self._next_event_index = 0
+                self._next_metronome_index = 0
             self._anchor_position = self._position
             self._anchor_clock = time.perf_counter()
             self._playing = True
@@ -267,6 +287,7 @@ class MidiPlaybackWorker(QThread):
             self._position = 0.0
             self._anchor_position = 0.0
             self._next_event_index = 0
+            self._next_metronome_index = 0
             self._condition.notify_all()
         self.panic_requested.emit()
         self.position_changed.emit(0.0)
@@ -286,6 +307,9 @@ class MidiPlaybackWorker(QThread):
             self._anchor_clock = time.perf_counter()
             self._next_event_index = bisect.bisect_left(
                 self._event_times, position
+            )
+            self._next_metronome_index = bisect.bisect_left(
+                self._metronome_times, position
             )
             playing = self._playing
             state = self._timeline.channel_state_at(position) if playing else ()
@@ -308,6 +332,18 @@ class MidiPlaybackWorker(QThread):
             self._speed = speed
             self._condition.notify_all()
 
+    def set_metronome_enabled(self, enabled: bool) -> None:
+        """Enable clicks and align the next one to the current song position."""
+
+        with self._condition:
+            self._metronome_enabled = bool(enabled)
+            position = self._position_locked()
+            self._next_metronome_index = bisect.bisect_left(
+                self._metronome_times,
+                position,
+            )
+            self._condition.notify_all()
+
     def request_shutdown(self) -> None:
         with self._condition:
             self._shutdown = True
@@ -317,6 +353,7 @@ class MidiPlaybackWorker(QThread):
         last_position_emit = 0.0
         while True:
             due_events: list[ScheduledMidiEvent] = []
+            due_metronome_ticks: list[MetronomeTick] = []
             reached_end = False
 
             with self._condition:
@@ -349,9 +386,29 @@ class MidiPlaybackWorker(QThread):
                     )
                     self._next_event_index += 1
 
+                if self._metronome_enabled:
+                    while (
+                        self._next_metronome_index
+                        < len(self._timeline.metronome_ticks)
+                        and self._timeline.metronome_ticks[
+                            self._next_metronome_index
+                        ].at_seconds <= dispatch_limit
+                    ):
+                        due_metronome_ticks.append(
+                            self._timeline.metronome_ticks[
+                                self._next_metronome_index
+                            ]
+                        )
+                        self._next_metronome_index += 1
+
             for event in due_events:
                 self.midi_event_due.emit(
                     MidiDispatch(dispatch_generation, event)
+                )
+
+            for tick in due_metronome_ticks:
+                self.metronome_tick_due.emit(
+                    MetronomeDispatch(dispatch_generation, tick)
                 )
 
             if now - last_position_emit >= 1.0 / 60.0 or reached_end:
