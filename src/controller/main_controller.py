@@ -47,12 +47,14 @@ class MainController(QObject):
     live_hold_feedback = Signal(object)
     performance_report_ready = Signal(object)
     metronome_enabled_changed = Signal(bool)
+    playback_enabled_changed = Signal(bool)
 
     SYNTH_STARTUP_GRACE_SECONDS = 1.0
     SYNTH_STARTUP_TIMEOUT_SECONDS = 15.0
 
     def __init__(self):
         super().__init__()
+        self._is_playback_enabled = None
         self.view = None
         self.midi_thread = None
         self.worker = None
@@ -234,6 +236,12 @@ class MainController(QObject):
                 self.playback_error.emit(f"Metronome reset error: {error}")
         self.metronome_enabled_changed.emit(enabled)
 
+    @Slot(bool)
+    def set_playback_enabled(self, enabled: bool) -> None:
+        """Toggle beat scheduling without changing playback state."""
+        self._is_playback_enabled = bool(enabled)
+        print("Playback enabled " + str(self._is_playback_enabled))
+
     # ------------------------------------------------------------------
     # FluidSynth output. These calls reuse MidiWorker.fs; midi.py is untouched.
     # ------------------------------------------------------------------
@@ -271,7 +279,8 @@ class MainController(QObject):
     def _send_message_to_synth(self, message: mido.Message) -> None:
         fs = self.worker.fs
         if message.type == "note_on":
-            fs.noteon(message.channel, message.note, message.velocity)
+            if self._is_playback_enabled:
+                fs.noteon(message.channel, message.note, message.velocity)
             with self._file_voice_lock:
                 key = (message.channel, message.note)
                 self._file_active_notes[key] = (
@@ -279,7 +288,8 @@ class MainController(QObject):
                 )
             self.playback_note_on.emit(message.note)
         elif message.type == "note_off":
-            fs.noteoff(message.channel, message.note)
+            if self._is_playback_enabled:
+                fs.noteoff(message.channel, message.note)
             with self._file_voice_lock:
                 key = (message.channel, message.note)
                 remaining = self._file_active_notes.get(key, 0) - 1

@@ -71,6 +71,14 @@ class MidiPlayerView(QFrame):
         self.metronome_button.setToolTip(
             "Play tempo-map-aware clicks during MIDI playback"
         )
+
+        self.enable_playback_button = QPushButton("Enable Playback")
+        self.enable_playback_button.setObjectName("enablePlaybackButton")
+        self.enable_playback_button.setCheckable(True)
+        self.enable_playback_button.setToolTip(
+            "Control if you want to hear the playback"
+        )
+
         self.file_label = QLabel("No MIDI file loaded")
         self.file_label.setObjectName("fileLabel")
         self.file_label.setMinimumWidth(100)
@@ -80,6 +88,7 @@ class MidiPlayerView(QFrame):
         header.addWidget(self.load_button)
         header.addWidget(self.import_button)
         header.addWidget(self.metronome_button)
+        header.addWidget(self.enable_playback_button)
         header.addWidget(self.file_label, 1)
         root.addLayout(header)
 
@@ -168,6 +177,9 @@ class MidiPlayerView(QFrame):
         self.metronome_button.toggled.connect(
             self.controller.set_metronome_enabled
         )
+        self.enable_playback_button.toggled.connect(
+            self.controller.set_playback_enabled
+        )
         self.speed_slider.valueChanged.connect(self.change_speed)
         self.seek_slider.sliderPressed.connect(self.begin_slider_seek)
         self.seek_slider.sliderMoved.connect(self.preview_slider_seek)
@@ -226,6 +238,12 @@ class MidiPlayerView(QFrame):
                 border-color: #67E8A5;
                 font-weight: 700;
             }
+            QFrame#midiPlayerView QPushButton#enablePlaybackButton:checked {
+                color: #0C1820;
+                background-color: #67E8A5;
+                border-color: #67E8A5;
+                font-weight: 700;
+            }
             QFrame#midiPlayerView QSlider::groove:horizontal {
                 height: 5px;
                 background: #343A4C;
@@ -264,6 +282,10 @@ class MidiPlayerView(QFrame):
         )
         self.controller.metronome_enabled_changed.connect(
             self.on_metronome_enabled_changed
+        )
+
+        self.controller.playback_enabled_changed.connect(
+            self.on_playback_enabled_changed
         )
 
     def _install_shortcuts(self) -> None:
@@ -334,9 +356,17 @@ class MidiPlayerView(QFrame):
         self.metronome_button.blockSignals(True)
         self.metronome_button.setChecked(enabled)
         self.metronome_button.setText(
-            "Metronome: On" if enabled else "Metronome: Off"
+            "Metronome: On " if enabled else "Metronome: Off"
         )
         self.metronome_button.blockSignals(False)
+
+    @Slot(bool)
+    def on_playback_enabled_changed(self, enabled: bool) -> None:
+        """Keep button text/state correct for UI or controller toggles."""
+
+        self.enable_playback_button.blockSignals(True)
+        self.enable_playback_button.setChecked(enabled)
+        self.enable_playback_button.blockSignals(False)
 
     @Slot(float)
     def on_position_changed(self, seconds) -> None:
