@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from src.util.constants import PIANO_SOURCE_PLAYBACK
 from src.view.piano_layout import PianoLayoutWidget
-
+from src.view.performance_result_dialog import PerformanceResultDialog
 
 class MidiPlayerView(QFrame):
     """Complete player UI and the existing controller-facing view contract."""
@@ -241,6 +241,9 @@ class MidiPlayerView(QFrame):
             self.reset_playback_highlights
         )
         self.controller.playback_error.connect(self.show_error)
+        self.controller.performance_report_ready.connect(
+            self.show_performance_report
+        )
 
     def _install_shortcuts(self) -> None:
         open_action = QAction("Import MIDI", self)
@@ -404,3 +407,11 @@ class MidiPlayerView(QFrame):
         self.status_label.setText(error_text)
         self.log_message.emit(error_text, "ERROR")
         QMessageBox.critical(self, "Error", error_text)
+
+    @Slot(object)
+    def show_performance_report(self, report) -> None:
+        PerformanceResultDialog.show_report(
+            report=report,
+            parent=self.window(),
+            practice_again_callback=self.controller.toggle_file_playback,
+        )
