@@ -127,7 +127,7 @@ class MainController(QObject):
             self.start_midi_engine()
         if self.view:
             self.view.update_note_display(
-                "Starting FluidSynth before MIDI-file playbackâŚ"
+                "Starting FluidSynth before MIDI-file playback"
             )
         QTimer.singleShot(100, self._finish_pending_file_play)
 
