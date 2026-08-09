@@ -22,13 +22,13 @@ to pin down some core functionalities the tools should have in order to provide 
 [ X ] Has a general graphical user interface to visualize the piano and notes
 
 ## Additional features
-[ X/0 ] Rewind and forward jump in the player
+[ X ] Rewind and forward jump in the player
 
-[ 0 ] Instant Feedback - show on GUI immediately if key was hit
+[ X ] Instant Feedback - show on GUI immediately if key was hit
 
-[ 0 ] Calculate general hit ratio result at the song end
+[ X ] Calculate general hit ratio result at the song end
 
-[ 0 ] Youtube to MIDI convert function
+[ - ] Youtube to MIDI convert function - won't do due to technical reasons
 
 [ 0 ] Record and replay practice (MIDI)
 
