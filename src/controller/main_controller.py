@@ -14,7 +14,16 @@ from pathlib import Path
 import mido
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot, Qt
 
-from src.controller.midi_playback_worker import MidiTimeline, MidiPlaybackWorker, MidiDispatch, NoteSpan
+from src.controller.metronome import (
+    FluidSynthMetronome,
+    MetronomeDispatch,
+)
+from src.controller.midi_playback_worker import (
+    MidiDispatch,
+    MidiPlaybackWorker,
+    MidiTimeline,
+    NoteSpan,
+)
 from src.controller.performance_tracker import (
     HoldFeedback,
     OnsetFeedback,
@@ -37,6 +46,7 @@ class MainController(QObject):
     live_note_feedback = Signal(object)
     live_hold_feedback = Signal(object)
     performance_report_ready = Signal(object)
+    metronome_enabled_changed = Signal(bool)
 
     SYNTH_STARTUP_GRACE_SECONDS = 1.0
     SYNTH_STARTUP_TIMEOUT_SECONDS = 15.0
@@ -55,12 +65,17 @@ class MainController(QObject):
         self._file_sustain_channels: set[int] = set()
         self._file_speed = 1.0
         self.performance_tracker = PerformanceTracker()
+        self.metronome = FluidSynthMetronome()
 
         self.playback_worker = MidiPlaybackWorker(self)
         # Direct delivery runs FluidSynth calls in the timing thread instead of
         # waiting for the GUI event loop.
         self.playback_worker.midi_event_due.connect(
             self._dispatch_file_event,
+            Qt.ConnectionType.DirectConnection,
+        )
+        self.playback_worker.metronome_tick_due.connect(
+            self._dispatch_metronome_tick,
             Qt.ConnectionType.DirectConnection,
         )
         self.playback_worker.chase_requested.connect(self._chase_file_state)
@@ -206,6 +221,19 @@ class MainController(QObject):
     def file_is_playing(self) -> bool:
         return self.playback_worker.is_playing()
 
+    @Slot(bool)
+    def set_metronome_enabled(self, enabled: bool) -> None:
+        """Toggle beat scheduling without changing playback state."""
+
+        enabled = bool(enabled)
+        self.playback_worker.set_metronome_enabled(enabled)
+        if not enabled and self.worker and self.worker.fs is not None:
+            try:
+                self.metronome.silence(self.worker.fs)
+            except Exception as error:
+                self.playback_error.emit(f"Metronome reset error: {error}")
+        self.metronome_enabled_changed.emit(enabled)
+
     # ------------------------------------------------------------------
     # FluidSynth output. These calls reuse MidiWorker.fs; midi.py is untouched.
     # ------------------------------------------------------------------
@@ -221,6 +249,24 @@ class MainController(QObject):
             self._send_message_to_synth(dispatch.event.message)
         except Exception as error:  # FluidSynth bindings raise platform-specific errors.
             self.playback_error.emit(f"FluidSynth playback error: {error}")
+
+    @Slot(object)
+    def _dispatch_metronome_tick(
+        self,
+        dispatch: MetronomeDispatch,
+    ) -> None:
+        """Render a generation-safe click in the scheduler timing thread."""
+
+        if not self.playback_worker.is_current_generation(dispatch.generation):
+            return
+        if not self.playback_worker.metronome_is_enabled():
+            return
+        if not self._synth_is_ready():
+            return
+        try:
+            self.metronome.play_tick(self.worker.fs, dispatch.tick, self.worker.soundfont_id)
+        except Exception as error:
+            self.playback_error.emit(f"FluidSynth metronome error: {error}")
 
     def _send_message_to_synth(self, message: mido.Message) -> None:
         fs = self.worker.fs
@@ -291,6 +337,7 @@ class MainController(QObject):
 
         if self.worker and self.worker.fs is not None:
             try:
+                self.metronome.silence(self.worker.fs)
                 for channel in sustain_channels:
                     self.worker.fs.cc(channel, 64, 0)
                 for (channel, note), voice_count in active_notes:

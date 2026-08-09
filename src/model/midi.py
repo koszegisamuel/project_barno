@@ -77,6 +77,7 @@ class MidiWorker(QObject):
         sf_id = self.fs.sfload(sf_path)
         configured_instrument = self._config.instrument
         self.fs.program_select(0, sf_id, 0, InstrumentRegistry.get_instrument_id(configured_instrument))
+        self.soundfont_id = sf_id
 
     def _init_midi_input(self):
         self.midiin = rtmidi.RtMidiIn()

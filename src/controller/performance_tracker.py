@@ -80,6 +80,7 @@ class _ExpectedNote:
 class _ActiveHit:
     expected_index: int
     pressed_at_seconds: float
+    expected_hold_seconds: float
 
 
 class PerformanceTracker:
@@ -197,6 +198,17 @@ class PerformanceTracker:
             song_position_seconds,
             self.ONSET_WINDOW_SECONDS * speed,
         )
+        late_entry = False
+        if expected_index is None:
+            # A player may miss the attack but still join a sustained note while
+            # it is visibly and musically active. This fallback is intentionally
+            # pitch-specific and only considers unconsumed notes whose note-off
+            # has not passed, preserving the strict normal onset matcher.
+            expected_index = self._sounding_unmatched_note(
+                note,
+                song_position_seconds,
+            )
+            late_entry = expected_index is not None
         if expected_index is None:
             self._extra_notes += 1
             self._unmatched_active[note] += 1
@@ -212,11 +224,26 @@ class PerformanceTracker:
             0.0,
             100.0 * (1.0 - absolute_error / self.ONSET_WINDOW_SECONDS),
         )
-        grade, label = self._onset_grade(error_wall_seconds)
+        if late_entry:
+            grade, label = "close", "Late entry"
+            # Hold quality for a late entry is judged from the press until the
+            # expected release. Requiring the already-missed duration would make
+            # it impossible for the player to earn a fair hold score.
+            expected_hold_seconds = max(
+                0.0,
+                expected.end_seconds - song_position_seconds,
+            )
+        else:
+            grade, label = self._onset_grade(error_wall_seconds)
+            expected_hold_seconds = expected.duration_seconds
         expected.onset_score = score
         expected.grade = grade
         self._active_hits[note].append(
-            _ActiveHit(expected_index, song_position_seconds)
+            _ActiveHit(
+                expected_index,
+                song_position_seconds,
+                expected_hold_seconds,
+            )
         )
         return OnsetFeedback(
             note=note,
@@ -246,7 +273,7 @@ class PerformanceTracker:
             self._active_hits.pop(note, None)
         expected = self._expected[active_hit.expected_index]
 
-        expected_duration = expected.duration_seconds
+        expected_duration = active_hit.expected_hold_seconds
         actual_duration = max(
             0.0, song_position_seconds - active_hit.pressed_at_seconds
         )
@@ -275,7 +302,7 @@ class PerformanceTracker:
             while active_hits:
                 active_hit = active_hits.popleft()
                 expected = self._expected[active_hit.expected_index]
-                duration = expected.duration_seconds
+                duration = active_hit.expected_hold_seconds
                 if duration < self.MIN_HOLD_SCORING_SECONDS:
                     expected.hold_score = 100.0
                 else:
@@ -349,6 +376,30 @@ class PerformanceTracker:
                 best_index = expected.index
                 best_error = error
         return best_index
+
+    def _sounding_unmatched_note(
+        self,
+        note: int,
+        position: float,
+    ) -> int | None:
+        """Return the newest unmatched same-pitch note still sounding.
+
+        This fallback runs only after the logarithmic onset-window search fails.
+        Walking backward prioritizes the most recently started overlap and keeps
+        ordinary matching behavior unchanged.
+        """
+
+        indices = self._indices_by_pitch.get(note)
+        starts = self._starts_by_pitch.get(note)
+        if not indices or not starts:
+            return None
+
+        right = bisect.bisect_right(starts, position)
+        for local_index in range(right - 1, -1, -1):
+            expected = self._expected[indices[local_index]]
+            if not expected.matched and position < expected.end_seconds:
+                return expected.index
+        return None
 
     @classmethod
     def _onset_grade(cls, error_seconds: float) -> tuple[str, str]:
