@@ -17,7 +17,7 @@ def main():
     #Currently configuration is loaded with horizontal settings
 
     # Connect Controller to View
-    controller.set_view(view)
+    controller.set_view(view.midi_player_view)
 
     # Add clean exit
     app.aboutToQuit.connect(controller.dispose)
