@@ -163,6 +163,9 @@ class MidiPlayerView(QFrame):
 
         self.setStyleSheet(
             """
+            QLabel {
+                color: #E7EAF0;
+            }
             QFrame#midiPlayerView {
                 color: #E7EAF0;
                 background-color: #141922;

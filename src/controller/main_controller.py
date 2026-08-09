@@ -15,7 +15,13 @@ import mido
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot, Qt
 
 from src.controller.midi_playback_worker import MidiTimeline, MidiPlaybackWorker, MidiDispatch, NoteSpan
+from src.controller.performance_tracker import (
+    HoldFeedback,
+    OnsetFeedback,
+    PerformanceTracker,
+)
 from src.model.midi import MidiWorker
+from src.util.constants import PIANO_SOURCE_LIVE
 
 
 class MainController(QObject):
@@ -28,6 +34,9 @@ class MainController(QObject):
     playback_note_off = Signal(int)
     playback_notes_reset = Signal()
     playback_error = Signal(str)
+    live_note_feedback = Signal(object)
+    live_hold_feedback = Signal(object)
+    performance_report_ready = Signal(object)
 
     SYNTH_STARTUP_GRACE_SECONDS = 1.0
     SYNTH_STARTUP_TIMEOUT_SECONDS = 15.0
@@ -44,6 +53,8 @@ class MainController(QObject):
         self._file_voice_lock = threading.Lock()
         self._file_active_notes: dict[tuple[int, int], int] = {}
         self._file_sustain_channels: set[int] = set()
+        self._file_speed = 1.0
+        self.performance_tracker = PerformanceTracker()
 
         self.playback_worker = MidiPlaybackWorker(self)
         # Direct delivery runs FluidSynth calls in the timing thread instead of
@@ -58,7 +69,7 @@ class MainController(QObject):
             self.playback_position_changed
         )
         self.playback_worker.playback_changed.connect(
-            self.playback_state_changed
+            self._on_playback_changed
         )
         self.playback_worker.end_reached.connect(self._on_file_end)
         self.playback_worker.start(QThread.Priority.TimeCriticalPriority)
@@ -84,8 +95,8 @@ class MainController(QObject):
         self.midi_thread.started.connect(self.worker.start_logic)
         self.worker.note_detected.connect(self.view.update_note_display)
         self.worker.error_occurred.connect(self.view.show_error)
-        self.worker.note_on.connect(self.view.piano_widget.handle_note_on)
-        self.worker.note_off.connect(self.view.piano_widget.handle_note_off)
+        self.worker.note_on.connect(self._on_live_note_on)
+        self.worker.note_off.connect(self._on_live_note_off)
 
         # Additional bookkeeping does not alter the input event path.
         self.worker.error_occurred.connect(self._on_engine_error)
@@ -105,6 +116,7 @@ class MainController(QObject):
             self.playback_error.emit(str(error))
             return
 
+        self.performance_tracker.cancel_session()
         self.timeline = timeline
         self.playback_worker.set_timeline(timeline)
         self.timeline_loaded.emit(timeline)
@@ -167,12 +179,25 @@ class MainController(QObject):
 
     def stop_file_playback(self) -> None:
         self._pending_file_play = False
+        self.performance_tracker.cancel_session()
         self.playback_worker.stop_playback()
 
     def seek_file(self, seconds: float) -> None:
+        restart_performance = self.performance_tracker.is_active
         self.playback_worker.seek(seconds)
+        if restart_performance and self.timeline is not None:
+            position = min(max(0.0, seconds), self.timeline.duration_seconds)
+            self.performance_tracker.start_session(
+                self.timeline.note_spans,
+                position,
+            )
+            if self.view:
+                self.view.update_note_display(
+                    "Performance tracking restarted after seek."
+                )
 
     def set_file_speed(self, speed: float) -> None:
+        self._file_speed = min(max(speed, 0.25), 2.0)
         self.playback_worker.set_speed(speed)
 
     def current_file_position(self) -> float:
@@ -279,6 +304,84 @@ class MainController(QObject):
     def _on_file_end(self) -> None:
         if self.view:
             self.view.update_note_display("Reached end of MIDI file.")
+        if self.performance_tracker.is_active:
+            report = self.performance_tracker.finalize(
+                self.playback_worker.current_position()
+            )
+            self.performance_report_ready.emit(report)
+            if self.view:
+                self.view.update_note_display(report.log_summary())
+
+    @Slot(bool)
+    def _on_playback_changed(self, playing: bool) -> None:
+        self.playback_state_changed.emit(playing)
+        if (
+            playing
+            and self.timeline is not None
+            and not self.performance_tracker.is_active
+        ):
+            position = self.playback_worker.current_position()
+            self.performance_tracker.start_session(
+                self.timeline.note_spans,
+                position,
+            )
+            if self.view:
+                self.view.update_note_display(
+                    "Performance tracking started."
+                )
+
+    @Slot(int)
+    def _on_live_note_on(self, note: int) -> None:
+        """Preserve live highlighting and add animation/timing judgment."""
+
+        if self.view is None:
+            return
+        piano = self.view.piano_widget
+        piano.handle_note_on(
+            note,
+            source=PIANO_SOURCE_LIVE,
+            animate=False,
+        )
+        piano.begin_live_feedback(note)
+
+        if (
+            self.performance_tracker.is_active
+            and self.playback_worker.is_playing()
+        ):
+            feedback = self.performance_tracker.note_on(
+                note,
+                self.playback_worker.current_position(),
+                self._file_speed,
+            )
+        else:
+            feedback = OnsetFeedback(note, "live", "", False)
+
+        if feedback.grade != "live":
+            piano.apply_onset_feedback(feedback)
+        self.live_note_feedback.emit(feedback)
+
+    @Slot(int)
+    def _on_live_note_off(self, note: int) -> None:
+        """Measure held duration, release the key, and finish its effect."""
+
+        if self.view is None:
+            return
+        if self.performance_tracker.is_active:
+            feedback = self.performance_tracker.note_off(
+                note,
+                self.playback_worker.current_position(),
+            )
+        else:
+            feedback = HoldFeedback(note, "live", "", False)
+
+        piano = self.view.piano_widget
+        piano.handle_note_off(
+            note,
+            source=PIANO_SOURCE_LIVE,
+            animate=False,
+        )
+        piano.finish_live_feedback(feedback)
+        self.live_hold_feedback.emit(feedback)
 
     @Slot(str)
     def _on_engine_error(self, _message: str) -> None:
@@ -291,6 +394,7 @@ class MainController(QObject):
         """Clean shutdown of both playback and physical-input threads."""
 
         self._pending_file_play = False
+        self.performance_tracker.cancel_session()
         self._file_all_notes_off()
         self.playback_worker.request_shutdown()
         self.playback_worker.wait(2000)
